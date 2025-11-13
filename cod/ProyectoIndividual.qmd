@@ -1,0 +1,200 @@
+---
+title: "ProyectoIndividual"
+author: "Daniel Jesús Cascante Espinoza"
+format: 
+  html:
+    embed-resources: true
+editor: visual
+---
+
+```{r}
+install.packages("nflreadr")
+```
+
+```{r}
+library(nflreadr)
+library(tidyverse)
+library(ggplot2)
+
+team_stats<-load_team_stats(2022:2023)
+names(team_stats)
+```
+
+```{r}
+partidos <- load_schedules(2022:2023) %>%
+  select(game_id, season, week, home_team, away_team, home_score, away_score)
+
+#LOCAL
+local_stats <- team_stats %>%
+  inner_join(partidos, by=c("season", "week", "team" = "home_team")) %>%
+  mutate(
+    score = home_score,
+    opponent_score = away_score,
+    victoria = ifelse(score>opponent_score, 1, 0),
+    tipo_partido = "local"
+  )
+
+#VISITANTE  
+visitante_stats <- team_stats %>%
+  inner_join(partidos, by=c("season", "week", "team" = "away_team")) %>%
+  mutate(
+    score = away_score,
+    opponent_score = home_score,
+    victoria = ifelse(score> opponent_score, 1, 0),
+    tipo_partido = "visitante"
+  )
+team_stats_completo <- bind_rows(local_stats, visitante_stats)
+
+#solo 2023
+team_stats_2023 <-team_stats_completo %>%
+  filter(season == 2023, season_type=="REG")
+#hasta aqui llega la recoleccion de datos necesaria
+```
+
+```{r}
+#yardas
+datos_yardas <-team_stats_2023 %>%
+  mutate(yardas_totales = passing_yards + rushing_yards) %>%
+  group_by(team) %>%
+  summarise(
+    partidos_jugados= n(),
+    victorias = sum(victoria),
+    porcentaje_victorias = victorias*100 / partidos_jugados,
+    yardas_promedio = mean(yardas_totales, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+#Grafico
+ggplot(datos_yardas, aes(x =yardas_promedio, y =porcentaje_victorias)) +
+  geom_point(color ="blue", size = 3, alpha = 1) +
+  geom_text(aes(label= team), size =3, vjust= -0.5, hjust = 0.5) +
+  geom_smooth(method= "lm", color = "red", se=FALSE, linetype= "dashed") +
+  labs(
+    title = "Yardas Totales vs. Porcentaje de Victorias",
+    x= "Yardas Totales Promedio por Partido",
+    y= "Porcentaje de Victorias"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.title = element_text(face = "bold")
+  )
+```
+
+```{r}
+#turnovers
+datos_turnovers<-team_stats_2023 %>%
+  mutate(
+    turnovers_en_contra= passing_interceptions + rushing_fumbles_lost +sack_fumbles_lost,
+    turnovers_a_favor= def_interceptions + fumble_recovery_opp,
+    turnover_ratio= turnovers_a_favor - turnovers_en_contra
+  ) %>%
+  group_by(team) %>%
+  summarise(
+    partidos_jugados =n(),
+    victorias = sum(victoria),
+    porcentaje_victorias = victorias*100 / partidos_jugados,
+    turnover_ratio_promedio = mean(turnover_ratio,na.rm = TRUE),
+    turnovers_a_favor_prom = mean(turnovers_a_favor, na.rm = TRUE),
+    turnovers_en_contra_prom = mean(turnovers_en_contra,na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+ggplot(datos_turnovers, aes(x = turnover_ratio_promedio, y = porcentaje_victorias)) +
+  geom_point(color = "darkgreen", size = 3, alpha = 1) +
+  geom_text(aes(label = team), size = 3, vjust = -0.5, hjust = 0.5, check_overlap = TRUE) +
+  geom_smooth(method = "lm", color = "red", se = FALSE, linetype = "dashed") +
+  labs(
+    title= "Relación entre Turnover Ratio y Porcentaje de Victorias",
+    x= "Turnover Ratio Promedio",
+    y= "Porcentaje de Victoria",
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 10),
+    axis.title = element_text(face = "bold")
+  )
+```
+
+```{r}
+#pase vs acarreo y eficiencia
+datos_estrategia<- team_stats_2023 %>%
+  mutate(
+    ratio_pase_carrera = passing_yards/ (rushing_yards + 1),  
+    # +1 para evitar división por 0
+    yardas_por_pase =passing_yards / (attempts + 1),
+    yardas_por_acarreo= rushing_yards / (carries + 1),
+    ofensiva_total= passing_yards + rushing_yards
+  ) %>%
+  group_by(team) %>%
+  summarise(
+    partidos_jugados =n(),
+    victorias = sum(victoria),
+    porcentaje_victorias = victorias*100 / partidos_jugados,
+    ratio_pase_carrera_prom = mean(ratio_pase_carrera, na.rm = TRUE),
+    ypp_pase_prom = mean(yardas_por_pase, na.rm = TRUE),
+    ypc_acarreo_prom = mean(yardas_por_acarreo, na.rm = TRUE),
+    ofensiva_total_prom = mean(ofensiva_total, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+ggplot(datos_estrategia, aes(x = ypc_acarreo_prom, y = ypp_pase_prom)) +
+  geom_point(aes(color = porcentaje_victorias), size = 4, alpha = 1) +
+  geom_text(aes(label = team), size = 3, vjust = -0.5, hjust = 0.5, check_overlap = TRUE) +
+  scale_color_gradient(low = "grey", high = "blue", name ="% Victorias") +
+  geom_smooth(method = "lm", color = "black", se = FALSE, linetype = "dashed")+
+  labs(
+    title = "Eficiencia ofensiva: pase vs carrera",
+    subtitle = "¿Qué gana más: pase eficiente o carrera eficiente?",
+    x = "Yardas por Acarreo",
+    y = "Yardas por Pase",
+    caption = "Color: % de Victorias (azul = Más victorias)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face= "bold", size = 14),
+    axis.title = element_text(face= "bold")
+  )
+
+#auxiliar
+ggplot(datos_estrategia, aes(x = ofensiva_total_prom, y = porcentaje_victorias)) +
+  geom_point(aes(color = ratio_pase_carrera_prom), size = 4, alpha = 1) +
+  geom_text(aes(label= team), size= 3, vjust = -0.5, hjust = 0.5, check_overlap = TRUE) +
+  scale_color_gradient(low= "blue", high = "red", name = "Ratio Pase/Carrera") +
+  geom_smooth(method="lm", color= "black", se= FALSE, linetype= "dashed") +
+  labs(
+    title = "Ofensiva Total vs Victorias",
+    subtitle = "Equipos azules = más carrera | Equipos rojos = más pase",
+    x = "Yardas Ofensivas Totales Promedio",
+    y = "Porcentaje de Victorias",
+  ) +
+  theme_minimal()
+```
+
+```{r}
+datos_comparacion <-datos_home_away %>%
+  select(team, porcentaje_victorias_local, porcentaje_victorias_visitante) %>%
+  pivot_longer(
+    cols = c(porcentaje_victorias_local, porcentaje_victorias_visitante),
+    names_to= "tipo",
+    values_to= "porcentaje_victorias"
+  ) %>%
+  mutate(
+    tipo=ifelse(tipo== "porcentaje_victorias_local", "Local", "Visitante")
+  )
+
+ggplot(datos_comparacion, aes(x = tipo, y = porcentaje_victorias)) +
+  geom_boxplot(fill = "lightblue", alpha = 1) +
+  labs(
+    title = "Ventaja de Local vs Visitante",
+    x= "Condición",
+    y= "Porcentaje de Victorias",
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title= element_text(face = "bold", size = 14),
+    axis.title= element_text(face = "bold")
+  )
+
+```
