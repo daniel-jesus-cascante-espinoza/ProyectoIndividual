@@ -8,7 +8,7 @@ editor: visual
 ---
 
 ```{r}
-install.packages("nflreadr")
+#install.packages("nflreadr")
 ```
 
 ```{r}
@@ -173,28 +173,39 @@ ggplot(datos_estrategia, aes(x = ofensiva_total_prom, y = porcentaje_victorias))
 ```
 
 ```{r}
-datos_comparacion <-datos_home_away %>%
+datos_home_away <- team_stats_2023 %>%
+  group_by(team, tipo_partido) %>%
+  summarise(
+    partidos = n(),
+    victorias = sum(victoria),
+    porcentaje_victorias = victorias / partidos * 100,
+    .groups = 'drop'
+  ) %>%
+  pivot_wider(
+    names_from = tipo_partido,
+    values_from = c(partidos, victorias, porcentaje_victorias)
+  )
+datos_comparacion <- datos_home_away %>%
   select(team, porcentaje_victorias_local, porcentaje_victorias_visitante) %>%
   pivot_longer(
     cols = c(porcentaje_victorias_local, porcentaje_victorias_visitante),
-    names_to= "tipo",
-    values_to= "porcentaje_victorias"
+    names_to = "tipo",
+    values_to = "porcentaje_victorias"
   ) %>%
   mutate(
-    tipo=ifelse(tipo== "porcentaje_victorias_local", "Local", "Visitante")
+    tipo = ifelse(tipo == "porcentaje_victorias_local", "Local", "Visitante")
   )
 
 ggplot(datos_comparacion, aes(x = tipo, y = porcentaje_victorias)) +
   geom_boxplot(fill = "lightblue", alpha = 1) +
   labs(
     title = "Ventaja de Local vs Visitante",
-    x= "Condición",
-    y= "Porcentaje de Victorias",
+    x = "Condición",
+    y = "Porcentaje de Victorias",
   ) +
   theme_minimal() +
   theme(
-    plot.title= element_text(face = "bold", size = 14),
-    axis.title= element_text(face = "bold")
+    plot.title = element_text(face = "bold", size = 14),
+    axis.title = element_text(face = "bold")
   )
-
 ```
